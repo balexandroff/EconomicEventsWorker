@@ -7,10 +7,13 @@ using static Microsoft.EntityFrameworkCore.DbLoggerCategory;
 public class DiscordNotifier
 {
     private readonly IOptions<AppSettings> _options;
+    private readonly string _discordWebhookApiKey;
 
     public DiscordNotifier(IOptions<AppSettings> options)
     {
+        DotNetEnv.Env.Load(@".env");
         _options = options;
+        _discordWebhookApiKey = Environment.GetEnvironmentVariable("DISCORD_WEBHOOK_API_KEY") ?? throw new ArgumentNullException("DISCORD_WEBHOOK_API_KEY environment variable is not set");
     }
 
     //public async Task SendMessageAsync(EconomicEvent @event)
@@ -68,7 +71,7 @@ public class DiscordNotifier
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         using var client = new HttpClient();
-        var response = await client.PostAsync(_options.Value.Discord.WebhookUrl, content);
+        var response = await client.PostAsync(_options.Value.Discord.WebhookUrl.Replace("{API_KEY}", _discordWebhookApiKey), content);
         response.EnsureSuccessStatusCode();
     }
 
@@ -98,7 +101,7 @@ public class DiscordNotifier
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         using var client = new HttpClient();
-        var response = await client.PostAsync(_options.Value.Discord.WebhookUrl, content);
+        var response = await client.PostAsync(_options.Value.Discord.WebhookUrl.Replace("{API_KEY}", _discordWebhookApiKey), content);
         response.EnsureSuccessStatusCode();
     }
 
@@ -125,7 +128,7 @@ public class DiscordNotifier
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         using var client = new HttpClient();
-        var response = await client.PostAsync(_options.Value.Discord.WebhookUrl, content);
+        var response = await client.PostAsync(_options.Value.Discord.WebhookUrl.Replace("{API_KEY}", _discordWebhookApiKey), content);
         response.EnsureSuccessStatusCode();
     }
 }
