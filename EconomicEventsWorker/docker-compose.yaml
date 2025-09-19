@@ -1,0 +1,24 @@
+version: "3.9"
+
+services:
+  economic-events-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: economic-events-worker
+    restart: unless-stopped
+    environment:
+      DOTNET_RUNNING_IN_CONTAINER: "true"
+      DOTNET_USE_POLLING_FILE_WATCHER: "true"
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "false"
+
+      # Pass API keys from .env file
+      TRADINGECONOMICS_API_KEY: ${TRADINGECONOMICS_API_KEY}
+      FRED_API_KEY: ${FRED_API_KEY}
+      DISCORD_API_KEY: ${DISCORD_API_KEY}
+
+    volumes:
+      - sqlite-data:/app/data
+
+volumes:
+  sqlite-data:

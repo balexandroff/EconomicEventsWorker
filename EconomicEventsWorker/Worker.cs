@@ -1,5 +1,6 @@
 ﻿using EconomicEventsWorker.Models;
 using EconomicEventsWorker.Notifiers;
+using EconomicEventsWorker.Services;
 using Microsoft.Extensions.Options;
 
 namespace EconomicEventsWorker
@@ -9,12 +10,16 @@ namespace EconomicEventsWorker
         private readonly ILogger<Worker> _logger;
         private readonly IOptions<AppSettings> _options;
         private readonly WeeklyNotifier _weeklyNotifier;
+        private readonly FREDEventsScraper _fredScraper;
+        private readonly InvestingComScraper _investingInterestRateScraper;
 
-        public Worker(IServiceProvider services, WeeklyNotifier weeklyNotifier, ILogger<Worker> logger, IOptions<AppSettings> options)
+        public Worker(IServiceProvider services, WeeklyNotifier weeklyNotifier, FREDEventsScraper fredScraper, InvestingComScraper investingInterestRateScraper, ILogger<Worker> logger, IOptions<AppSettings> options)
         {
             _logger = logger;
             _options = options;
             _weeklyNotifier = weeklyNotifier;
+            _fredScraper = fredScraper;
+            _investingInterestRateScraper = investingInterestRateScraper;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -40,6 +45,10 @@ namespace EconomicEventsWorker
         {
             // 1️⃣ Седмична нотификация - проверка дали вече е пращана тази седмица
             await _weeklyNotifier.SendWeeklyNotificationIfNeeded();
+
+            //Try to notify for new events
+            await _fredScraper.ScrapeLatestEventsAndNotify();
+            await _investingInterestRateScraper.ScrapeLatestFEDInterestRatesAndNotify();
         }
     }
 }

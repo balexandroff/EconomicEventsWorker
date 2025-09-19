@@ -3,10 +3,7 @@
     "EconomicEventsWorker": {
       "commandName": "Project",
       "environmentVariables": {
-        "DOTNET_ENVIRONMENT": "Development",
-        //"TRADING_ECONOMICS_API_KEY": "209625fb074c4c5:fhl44v0s7g2d36y",
-        //"FRED_API_KEY": "asdasdsad",
-        //"DISCORD_WEBHOOK_API_KEY": "LvhA79OrLLnvQtb6nw2oAyUUZlxXnQ3iZrGkyYHqbypbalQzg8T-C_lXSSCcz6B8Jneh"
+        "DOTNET_ENVIRONMENT": "Development"
       },
       "dotnetRunMessages": true
     },

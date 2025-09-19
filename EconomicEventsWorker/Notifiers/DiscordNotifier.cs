@@ -2,18 +2,18 @@
 using Microsoft.Extensions.Options;
 using System.Text;
 using System.Text.Json;
-using static Microsoft.EntityFrameworkCore.DbLoggerCategory;
 
 public class DiscordNotifier
 {
     private readonly IOptions<AppSettings> _options;
-    private readonly string _discordWebhookApiKey;
+    private readonly ILogger<DiscordNotifier> _logger;
+    private readonly string _apiKey;
 
-    public DiscordNotifier(IOptions<AppSettings> options)
+    public DiscordNotifier(IOptions<AppSettings> options, ILogger<DiscordNotifier> logger)
     {
-        DotNetEnv.Env.Load(@".env");
         _options = options;
-        _discordWebhookApiKey = Environment.GetEnvironmentVariable("DISCORD_WEBHOOK_API_KEY") ?? throw new ArgumentNullException("DISCORD_WEBHOOK_API_KEY environment variable is not set");
+        _logger = logger;
+        _apiKey = Environment.GetEnvironmentVariable("DISCORD_API_KEY") ?? throw new ArgumentNullException("Discord API Key should be provided.");
     }
 
     //public async Task SendMessageAsync(EconomicEvent @event)
@@ -45,48 +45,20 @@ public class DiscordNotifier
     //    response.EnsureSuccessStatusCode();
     //}
 
-    public async Task SendTestNotificationAsync(List<WeeklyEvent> upcomingEvents)
-    {
-        var color = 0x00FF00; // green for example
-
-        string message = string.Empty;// "📅 **Economic Calendar for this week:**\n";
-        foreach (var @event in upcomingEvents)
-            message += $"- {@event.Name} → {@event.ScheduledDate:ddd dd MMM yyyy}\n";
-
-        var payload = new
-        {
-            embeds = new[]
-            {
-                new
-                {
-                    title = "🚨🚨🚨TEST MESSAGE FROM HOSTED APP🚨🚨🚨 **Economic Calendar for this week:**",
-                    description = message,
-                    color = color,
-                    timestamp = DateTime.Now.ToUniversalTime().ToString("o")
-                }
-            }
-        };
-
-        var json = JsonSerializer.Serialize(payload);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-        using var client = new HttpClient();
-        var response = await client.PostAsync(_options.Value.Discord.WebhookUrl.Replace("{API_KEY}", _discordWebhookApiKey), content);
-        response.EnsureSuccessStatusCode();
-    }
-
     public async Task SendUpcomingEventsAsync(List<WeeklyEvent> upcomingEvents)
     {
-        var color = 0x00FF00; // green for example
-
-        string message = string.Empty;// "📅 **Economic Calendar for this week:**\n";
-        foreach (var @event in upcomingEvents)
-            message += $"- {@event.Name} → {@event.ScheduledDate:ddd dd MMM yyyy}\n";
-
-        var payload = new
+        try
         {
-            embeds = new[]
+            var color = 0x00FF00; // green for example
+
+            string message = string.Empty;// "📅 **Economic Calendar for this week:**\n";
+            foreach (var @event in upcomingEvents)
+                message += $"- {@event.Name} → {@event.ScheduledDate:ddd dd MMM yyyy}\n";
+
+            var payload = new
             {
+                embeds = new[]
+                {
                 new
                 {
                     title = "📅 **Economic Calendar for this week:**",
@@ -95,40 +67,54 @@ public class DiscordNotifier
                     timestamp = DateTime.Now.ToUniversalTime().ToString("o")
                 }
             }
-        };
+            };
 
-        var json = JsonSerializer.Serialize(payload);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var json = JsonSerializer.Serialize(payload);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-        using var client = new HttpClient();
-        var response = await client.PostAsync(_options.Value.Discord.WebhookUrl.Replace("{API_KEY}", _discordWebhookApiKey), content);
-        response.EnsureSuccessStatusCode();
+            using var client = new HttpClient();
+            var response = await client.PostAsync(_options.Value.Discord.WebhookUrl.Replace("{API_KEY}", _apiKey), content);
+            response.EnsureSuccessStatusCode();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"Error while sending Discord upcoming events: {ex}");
+        }
     }
 
-    public async Task SendEventUpdatesAsync(Observation @event)
+    public async Task SendEventUpdatesAsync(Observation @event, string previousValue = null, string forecastValue = null, int? color = null, string helperText = null)
     {
-        var color = 0x00FF00; // green for example
-
-        var payload = new
+        try
         {
-            embeds = new[]
+            color = color ?? 0x00FF00; // green for example
+
+            var payload = new
             {
+                embeds = new[]
+                {
                 new
                 {
                     title = $"📊 **{@event.Indicator.Name} Update**",
                     description = $"📅 {@event.Date:yyyy-MM-dd HH:mm}\n" +
-                                  $"🟢 Value: {@event.Value}",
+                                  $"- Value: {@event.Value}" + $"{(!string.IsNullOrEmpty(helperText) ? " - *" + helperText + "*" : string.Empty)}" +
+                                  $"{(!string.IsNullOrEmpty(previousValue) ? $"\n- Previous Value: {previousValue}" : string.Empty)}" +
+                                  $"{(!string.IsNullOrEmpty(forecastValue) ? $"\n- Forecast Value: {forecastValue}" : string.Empty)}",
                     color = color,
                     timestamp = @event.Date.ToUniversalTime().ToString("o")
                 }
             }
-        };
+            };
 
-        var json = JsonSerializer.Serialize(payload);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var json = JsonSerializer.Serialize(payload);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-        using var client = new HttpClient();
-        var response = await client.PostAsync(_options.Value.Discord.WebhookUrl.Replace("{API_KEY}", _discordWebhookApiKey), content);
-        response.EnsureSuccessStatusCode();
+            using var client = new HttpClient();
+            var response = await client.PostAsync(_options.Value.Discord.WebhookUrl.Replace("{API_KEY}", _apiKey), content);
+            response.EnsureSuccessStatusCode();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"Error while sending Discord event updates: {ex}");
+        }
     }
 }

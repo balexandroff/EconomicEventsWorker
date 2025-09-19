@@ -2,15 +2,7 @@
 using EconomicEventsWorker.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net.Http.Json;
-using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
-using static System.Net.WebRequestMethods;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace EconomicEventsWorker.Services
 {
@@ -19,65 +11,112 @@ namespace EconomicEventsWorker.Services
         private readonly IOptions<AppSettings> _options;
         private readonly IServiceProvider _services;
         private readonly DiscordNotifier _discordNotifier;
+        private readonly ILogger<FREDEventsScraper> _logger;
+        private readonly string _apiKey;
 
-        public FREDEventsScraper(IServiceProvider services, DiscordNotifier discordNotifier, IOptions<AppSettings> options)
+        public FREDEventsScraper(IServiceProvider services, DiscordNotifier discordNotifier, IOptions<AppSettings> options, ILogger<FREDEventsScraper> logger)
         {
             _services = services;
             _discordNotifier = discordNotifier;
             _options = options;
+            _logger = logger;
+            _apiKey = Environment.GetEnvironmentVariable("FRED_API_KEY") ?? throw new ArgumentNullException("Discord API Key should be provided.");
         }
 
         public async Task ScrapeLatestEventsAndNotify()
         {
             using (var scope = _services.CreateScope())
             {
-                using var db = scope.ServiceProvider.GetRequiredService<EconomicContext>();
-
-                db.Database.EnsureCreated();
-
-                foreach (var indicator in await db.Indicators.ToListAsync())
+                try
                 {
-                    var observations = await GetLatestObservation(indicator.SeriesId);
-                    var latest = observations.LastOrDefault();
-                    if (latest == null) continue;
+                    using var db = scope.ServiceProvider.GetRequiredService<EconomicContext>();
 
-                    // Проверка дали вече е изпратено
-                    if (indicator.LastValue != latest.Value)
+                    db.Database.EnsureCreated();
+
+                    foreach (var indicator in await db.Indicators.ToListAsync())
                     {
-                        latest.Indicator = indicator;
-                        await _discordNotifier.SendEventUpdatesAsync(latest);
+                        var observations = await GetLatestObservation(indicator.SeriesId);
+                        var latest = observations.LastOrDefault();
+                        if (latest == null) continue;
 
-                        // Запазваме в база
-                        indicator.LastValue = latest.Value;
-                        indicator.LastDate = latest.Date;
-                        db.Observations.Add(new Observation
+                        // Проверка дали вече е изпратено
+                        if (indicator.LastValue != latest.Value)
                         {
-                            IndicatorId = indicator.Id,
-                            Date = latest.Date,
-                            Value = latest.Value
-                        });
+                            latest.Indicator.Id = Guid.NewGuid();
+                            latest.Indicator.Name = indicator.Name;
+                            latest.Indicator.LastValue = latest.Value;
 
-                        await db.SaveChangesAsync();
+                            await _discordNotifier.SendEventUpdatesAsync(latest);
+
+                            // Запазваме в база
+                            indicator.LastValue = latest.Value;
+                            indicator.LastDate = latest.Date;
+                            db.Observations.Add(new Observation
+                            {
+                                IndicatorId = indicator.Id,
+                                Date = latest.Date,
+                                Value = latest.Value
+                            });
+
+                            await db.SaveChangesAsync();
+                        }
                     }
+                }
+                catch (Exception ex) {
+                    _logger.LogError($"Error while loadiong FRED data: {ex}");
                 }
             }
         }
 
         private async Task<List<Observation>> GetLatestObservation(string seriesId)
         {
-            var url = string.Format(_options.Value.FRED.ApiUrl, seriesId);
-            var json = await (new HttpClient()).GetStringAsync(url);
-            //var response = await (new HttpClient()).GetFromJsonAsync<FredApiResponse>(url);
-            //return response?.Observations?.Select(o => new FredObservation
-            //{
-            //    Date = DateTime.Parse(o.date),
-            //    Value = o.value
-            //}).ToArray() ?? Array.Empty<FredObservation>();
+            Thread.Sleep(3000);
 
-            var events = JsonSerializer.Deserialize<List<Observation>>(json,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            List<Observation> response = new List<Observation>();
 
-            return await Task.FromResult(events);
+            try
+            {
+                _logger.LogInformation($"Start fetching data for SerieId: \"{seriesId}\"");
+
+                var url = _options.Value.FRED.ApiUrl.Replace("{API_KEY}", _apiKey)
+                                                    .Replace("{seriesId}", seriesId)
+                                                    .Replace("{observation_start}", DateTime.Now.AddDays(-1).ToString("yyyy-MM-dd"))
+                                                    .Replace("{observation_end}", DateTime.Now.ToString("yyyy-MM-dd"))
+                                                    .Replace("{realtime_start}", DateTime.Now.AddDays(-1).ToString("yyyy-MM-dd"))
+                                                    .Replace("{realtime_end}", DateTime.Now.ToString("yyyy-MM-dd"));
+                var json = await (new HttpClient()).GetStringAsync(url);
+                //var response = await (new HttpClient()).GetFromJsonAsync<FredApiResponse>(url);
+                //return response?.Observations?.Select(o => new FredObservation
+                //{
+                //    Date = DateTime.Parse(o.date),
+                //    Value = o.value
+                //}).ToArray() ?? Array.Empty<FredObservation>();
+
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var fredData = JsonSerializer.Deserialize<FredObservationResponse>(json, options);
+
+                response = fredData.Observations.Select(e => new Observation
+                {
+                    Id = Guid.NewGuid(),
+                    Indicator = new Indicator
+                    {
+                        SeriesId = seriesId,
+                        LastValue = e.Value,
+                        LastDate = DateTime.Parse(e.Date)
+                    },
+                    Value = e.Value,
+                    Date = DateTime.Parse(e.Date)
+                }).ToList();
+
+                _logger.LogInformation($"End fetching data for SerieId: \"{seriesId}\"");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error while loadiong FRED observation data: {ex}");
+            }
+
+            return await Task.FromResult(response);
+
         }
     }
 }
